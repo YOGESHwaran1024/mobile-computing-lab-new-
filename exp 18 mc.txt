@@ -1,0 +1,57 @@
+import numpy as np
+import matplotlib.pyplot as plt
+
+def erlang_b(traffic_erlangs, channels):
+    if channels == 0:
+        return 1.0
+    b = 1.0
+    for c in range(1, channels + 1):
+        b = (traffic_erlangs * b) / (c + traffic_erlangs * b)
+    return b
+
+def find_required_channels(traffic_erlangs, target_gos=0.02):
+    channels = 1
+    while erlang_b(traffic_erlangs, channels) > target_gos:
+        channels += 1
+    return channels, erlang_b(traffic_erlangs, channels)
+
+if __name__ == "__main__":
+    target_gos = 0.02
+    traffic_loads = [2, 5, 10, 15, 20, 25]
+    
+    print(f"Target Grade of Service (GoS): {target_gos * 100:.1f}%\n")
+    print(f"{'Traffic (Erlangs)':<18} | {'Min Channels (C)':<18} | {'Actual GoS':<14}")
+    print("-" * 56)
+    
+    req_channels_list = []
+    for A in traffic_loads:
+        c_req, actual_gos = find_required_channels(A, target_gos)
+        req_channels_list.append(c_req)
+        print(f"{A:<18.1f} | {c_req:<18d} | {actual_gos:<14.4f}")
+        
+    A_range = np.linspace(0.5, 25, 100)
+    channel_counts = [10, 15, 20]
+    
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(13, 5))
+    
+    for C in channel_counts:
+        gos_vals = [erlang_b(a, C) for a in A_range]
+        ax1.plot(A_range, gos_vals, linewidth=2, label=f"C = {C} channels")
+        
+    ax1.axhline(y=target_gos, color='red', linestyle='--', linewidth=1.5, label=f"Target GoS = {target_gos*100:.0f}% ({target_gos})")
+    ax1.set_yscale("log")
+    ax1.set_ylim(0.001, 0.5)
+    ax1.set_title("Blocking Probability (GoS) vs. Traffic Intensity")
+    ax1.set_xlabel("Offered Traffic (Erlangs)")
+    ax1.set_ylabel("Blocking Probability (GoS)")
+    ax1.grid(True, which="both", linestyle='--', alpha=0.6)
+    ax1.legend()
+    
+    ax2.plot(traffic_loads, req_channels_list, marker='o', color='purple', linewidth=2)
+    ax2.set_title(f"Required Channels vs. Offered Traffic (Target GoS = {target_gos*100:.0f}%)")
+    ax2.set_xlabel("Offered Traffic (Erlangs)")
+    ax2.set_ylabel("Minimum Required Channels (C)")
+    ax2.grid(True, linestyle='--', alpha=0.7)
+    
+    plt.tight_layout()
+    plt.show()
