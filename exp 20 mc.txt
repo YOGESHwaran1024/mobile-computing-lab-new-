@@ -1,0 +1,102 @@
+import numpy as np
+import matplotlib.pyplot as plt
+
+def walsh_matrix(order):
+    if order == 1:
+        return np.array([[1]])
+    half = walsh_matrix(order // 2)
+    top = np.hstack((half, half))
+    bottom = np.hstack((half, -half))
+    return np.vstack((top, bottom))
+
+def bits_to_bipolar(bits):
+    return np.where(np.array(bits) == 1, 1, -1)
+
+def bipolar_to_bits(symbols):
+    return np.where(np.array(symbols) >= 0, 1, 0)
+
+def ds_cdma_demo(user_bits, code_indices, spreading_factor=4):
+    H = walsh_matrix(spreading_factor)
+    codes = [H[idx] for idx in code_indices]
+    
+    num_users = len(user_bits)
+    num_bits = len(user_bits[0])
+    
+    spread_streams = []
+    for u in range(num_users):
+        bipolar_data = bits_to_bipolar(user_bits[u])
+        chips = np.kron(bipolar_data, codes[u])
+        spread_streams.append(chips)
+        
+    composite_signal = np.sum(spread_streams, axis=0)
+    
+    recovered_bits = []
+    correlator_outputs = []
+    
+    for u in range(num_users):
+        user_corr = []
+        for b in range(num_bits):
+            start = b * spreading_factor
+            end = start + spreading_factor
+            segment = composite_signal[start:end]
+            corr_val = np.dot(segment, codes[u]) / spreading_factor
+            user_corr.append(corr_val)
+        correlator_outputs.append(user_corr)
+        recovered_bits.append(bipolar_to_bits(user_corr))
+        
+    return codes, composite_signal, correlator_outputs, recovered_bits
+
+if __name__ == "__main__":
+    L = 4
+    user_data = [
+        [1, 0, 1, 1],
+        [0, 1, 1, 0],
+        [1, 1, 0, 0]
+    ]
+    walsh_indices = [0, 1, 2]
+    
+    codes, composite, corr_vals, rx_bits = ds_cdma_demo(user_data, walsh_indices, L)
+    
+    for u in range(len(user_data)):
+        print(f"User {u+1} Walsh Code (W{walsh_indices[u]}): {codes[u].tolist()}")
+        print(f"User {u+1} Original Bits:           {user_data[u]}")
+        print(f"User {u+1} Recovered Bits:          {rx_bits[u].tolist()}")
+        print(f"User {u+1} Correlator Outputs:      {[round(float(x), 2) for x in corr_vals[u]]}\n")
+        
+    print(f"Composite Signal ({len(composite)} chips): {composite.astype(int).tolist()}")
+    
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(13.5, 4.8))
+    
+    chip_indices = np.arange(len(composite))
+    ax1.step(chip_indices, composite, where="post", linewidth=2, color="tab:purple")
+    ax1.set_title("Composite Transmitted Signal (3 Users Combined)")
+    ax1.set_xlabel("Chip Index")
+    ax1.set_ylabel("Composite Amplitude")
+    ax1.set_ylim(-4, 4)
+    ax1.grid(True, linestyle="--", alpha=0.6)
+    
+    bit_indices = np.arange(1, len(user_data[0]) + 1)
+    markers = ["o", "s", "^"]
+    colors = ["tab:blue", "tab:orange", "tab:green"]
+    
+    for u in range(len(user_data)):
+        ax2.plot(
+            bit_indices,
+            corr_vals[u],
+            marker=markers[u],
+            color=colors[u],
+            linewidth=2,
+            label=f"User {u+1}"
+        )
+        
+    ax2.axhline(0, color="gray", linestyle=":", linewidth=1)
+    ax2.set_title("Despread Correlation Output per Bit Period")
+    ax2.set_xlabel("Bit Index")
+    ax2.set_ylabel("Normalized Correlator Output")
+    ax2.set_xticks(bit_indices)
+    ax2.set_ylim(-1.5, 1.5)
+    ax2.grid(True, linestyle="--", alpha=0.6)
+    ax2.legend()
+    
+    plt.tight_layout()
+    plt.show()
