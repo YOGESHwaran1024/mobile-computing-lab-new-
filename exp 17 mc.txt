@@ -1,0 +1,55 @@
+import numpy as np
+import matplotlib.pyplot as plt
+
+def analyze_cellular_cluster(cluster_sizes, total_channels=300, total_cells=15, i0=6):
+    N = np.array(cluster_sizes, dtype=float)
+    
+    Q = np.sqrt(3 * N)
+    capacity = (total_cells * total_channels) / N
+    
+    si_linear_n3 = (Q ** 3) / i0
+    si_db_n3 = 10 * np.log10(si_linear_n3)
+    
+    si_linear_n4 = (Q ** 4) / i0
+    si_db_n4 = 10 * np.log10(si_linear_n4)
+    
+    print(f"System Parameters: Total Channels (S) = {total_channels}, Total Cells (M) = {total_cells}, Interferers (i0) = {i0}\n")
+    print(f"{'N':<5} | {'Reuse Ratio (Q)':<16} | {'Capacity (C)':<14} | {'S/I [n=3] (dB)':<16} | {'S/I [n=4] (dB)':<16}")
+    print("-" * 78)
+    
+    for n_val, q_val, cap_val, si3, si4 in zip(cluster_sizes, Q, capacity, si_db_n3, si_db_n4):
+        print(f"{n_val:<5} | {q_val:<16.2f} | {cap_val:<14.0f} | {si3:<16.2f} | {si4:<16.2f}")
+        
+    return Q, capacity, si_db_n3, si_db_n4
+
+if __name__ == "__main__":
+    N_values = [3, 4, 7, 9, 12, 13, 19]
+    S = 300
+    M = 15
+    
+    Q, capacity, si_n3, si_n4 = analyze_cellular_cluster(N_values, total_channels=S, total_cells=M)
+
+    fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(15, 4.8))
+    
+    ax1.plot(N_values, Q, marker='o', color='tab:blue', linewidth=2)
+    ax1.set_title("Co-Channel Reuse Ratio (Q) vs. Cluster Size (N)")
+    ax1.set_xlabel("Cluster Size (N)")
+    ax1.set_ylabel("Reuse Ratio (Q = sqrt(3N))")
+    ax1.grid(True, linestyle='--', alpha=0.7)
+    
+    ax2.plot(N_values, capacity, marker='s', color='tab:red', linewidth=2)
+    ax2.set_title("System Capacity (C) vs. Cluster Size (N)")
+    ax2.set_xlabel("Cluster Size (N)")
+    ax2.set_ylabel("Total Channels (C = M * S / N)")
+    ax2.grid(True, linestyle='--', alpha=0.7)
+    
+    ax3.plot(N_values, si_n3, marker='^', linestyle='--', color='tab:orange', linewidth=2, label="n = 3 (Urban)")
+    ax3.plot(N_values, si_n4, marker='D', linestyle='-', color='tab:green', linewidth=2, label="n = 4 (Suburban)")
+    ax3.set_title("Signal-to-Interference Ratio (S/I) vs. Cluster Size (N)")
+    ax3.set_xlabel("Cluster Size (N)")
+    ax3.set_ylabel("S/I (dB)")
+    ax3.grid(True, linestyle='--', alpha=0.7)
+    ax3.legend()
+    
+    plt.tight_layout()
+    plt.show()
