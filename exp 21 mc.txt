@@ -1,0 +1,153 @@
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+
+def jains_fairness_index(throughputs: np.ndarray) -> float:
+    throughputs = np.asarray(throughputs, dtype=float)
+    n = len(throughputs)
+    denom = n * np.sum(throughputs ** 2)
+    if denom == 0:
+        return 1.0
+    return float((np.sum(throughputs) ** 2) / denom)
+
+
+def generate_channel_rates(
+    num_slots: int,
+    num_users: int,
+    bandwidth_hz: float = 10e6,
+    mean_snr_db_range: tuple[float, float] = (0.0, 18.0),
+    seed: int = 42,
+) -> tuple[np.ndarray, np.ndarray]:
+    rng = np.random.default_rng(seed)
+
+    mean_snr_db = np.linspace(mean_snr_db_range[0], mean_snr_db_range[1], num_users)
+    mean_snr_linear = 10 ** (mean_snr_db / 10.0)
+
+    fading = rng.exponential(scale=1.0, size=(num_slots, num_users))
+    inst_snr = fading * mean_snr_linear[None, :]
+
+    slot_duration_sec = 1e-3
+    spectral_eff = np.log2(1.0 + inst_snr)
+    rates_mbps = (bandwidth_hz * spectral_eff * slot_duration_sec) / 1e6
+    return rates_mbps, mean_snr_db
+
+
+def simulate_schedulers(
+    rates_mbps: np.ndarray,
+    pf_alpha: float = 0.05,
+) -> dict[str, dict]:
+    num_slots, num_users = rates_mbps.shape
+    total_time_sec = num_slots * 1e-3
+
+    results = {}
+    for policy in ["Round Robin", "Maximum C/I", "Proportional Fair"]:
+        bits_delivered = np.zeros(num_users, dtype=float)
+        avg_throughput = np.full(num_users, 1e-3, dtype=float)
+
+        for t in range(num_slots):
+            inst_rates = rates_mbps[t]
+
+            if policy == "Round Robin":
+                selected = t % num_users
+            elif policy == "Maximum C/I":
+                selected = int(np.argmax(inst_rates))
+            elif policy == "Proportional Fair":
+                metrics = inst_rates / avg_throughput
+                selected = int(np.argmax(metrics))
+            else:
+                raise ValueError(f"Unknown policy: {policy}")
+
+            delivered = inst_rates[selected]
+            bits_delivered[selected] += delivered
+
+            slot_tp = np.zeros(num_users, dtype=float)
+            slot_tp[selected] = delivered / 1e-3
+            avg_throughput = (1.0 - pf_alpha) * avg_throughput + pf_alpha * slot_tp
+
+        per_user_tp_mbps = bits_delivered / total_time_sec
+        total_tp_mbps = float(np.sum(per_user_tp_mbps))
+        jfi = jains_fairness_index(per_user_tp_mbps)
+
+        results[policy] = {
+            "per_user_throughput_mbps": per_user_tp_mbps,
+            "total_throughput_mbps": total_tp_mbps,
+            "jains_fairness_index": jfi,
+        }
+
+    return results
+
+
+def plot_comparison(results: dict[str, dict], mean_snr_db: np.ndarray) -> None:
+    policies = list(results.keys())
+    num_users = len(mean_snr_db)
+    x = np.arange(num_users)
+    width = 0.25
+
+    fig, axes = plt.subplots(1, 3, figsize=(15, 4.5))
+
+    for idx, policy in enumerate(policies):
+        tp = results[policy]["per_user_throughput_mbps"]
+        axes[0].bar(x + (idx - 1) * width, tp, width=width, label=policy)
+    axes[0].set_title("Per-User Throughput")
+    axes[0].set_xlabel("User Index (Low SNR -> High SNR)")
+    axes[0].set_ylabel("Throughput (Mbps)")
+    axes[0].set_xticks(x)
+    axes[0].set_xticklabels([f"U{i+1}\n({snr:.0f}dB)" for i, snr in enumerate(mean_snr_db)], fontsize=8)
+    axes[0].legend()
+    axes[0].grid(axis="y", linestyle="--", alpha=0.5)
+
+    total_tps = [results[p]["total_throughput_mbps"] for p in policies]
+    axes[1].bar(policies, total_tps, width=0.5)
+    axes[1].set_title("Total Cell Throughput")
+    axes[1].set_ylabel("Total Throughput (Mbps)")
+    axes[1].grid(axis="y", linestyle="--", alpha=0.5)
+    for i, val in enumerate(total_tps):
+        axes[1].text(i, val + max(total_tps) * 0.02, f"{val:.1f}", ha="center", va="bottom", fontsize=9)
+
+    jfi_vals = [results[p]["jains_fairness_index"] for p in policies]
+    axes[2].bar(policies, jfi_vals, width=0.5)
+    axes[2].set_title("Jain's Fairness Index")
+    axes[2].set_ylabel("Fairness Index (0 to 1)")
+    axes[2].set_ylim(0, 1.08)
+    axes[2].grid(axis="y", linestyle="--", alpha=0.5)
+    for i, val in enumerate(jfi_vals):
+        axes[2].text(i, val + 0.02, f"{val:.3f}", ha="center", va="bottom", fontsize=9)
+
+    plt.tight_layout()
+    plt.show()
+
+
+if __name__ == "__main__":
+    rates, snr_db = generate_channel_rates(
+        num_slots=5000,
+        num_users=8,
+        bandwidth_hz=10e6,
+        mean_snr_db_range=(0.0, 18.0),
+        seed=42,
+    )
+
+    sim_results = simulate_schedulers(rates, pf_alpha=0.05)
+
+    summary_rows = []
+    for policy, metrics in sim_results.items():
+        summary_rows.append({
+            "Scheduler": policy,
+            "Total Throughput (Mbps)": round(metrics["total_throughput_mbps"], 2),
+            "Min User TP (Mbps)": round(float(np.min(metrics["per_user_throughput_mbps"])), 2),
+            "Max User TP (Mbps)": round(float(np.max(metrics["per_user_throughput_mbps"])), 2),
+            "Jain's Fairness Index": round(metrics["jains_fairness_index"], 4),
+        })
+
+    df_summary = pd.DataFrame(summary_rows)
+    print("\n=== Downlink Scheduler Comparison Summary ===")
+    print(df_summary.to_string(index=False))
+
+    print("\n=== Per-User Throughput (Mbps) ===")
+    df_users = pd.DataFrame(
+        {p: np.round(m["per_user_throughput_mbps"], 2) for p, m in sim_results.items()},
+        index=[f"User {i+1} ({snr_db[i]:.1f} dB)" for i in range(len(snr_db))],
+    )
+    print(df_users.to_string())
+
+    plot_comparison(sim_results, snr_db)
