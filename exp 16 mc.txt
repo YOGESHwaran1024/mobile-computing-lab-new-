@@ -1,0 +1,61 @@
+import numpy as np
+import matplotlib.pyplot as plt
+
+def calculate_fspl_and_pr(distances_km, frequencies_mhz, pt_dbm=20.0, gt_dbi=2.0, gr_dbi=2.0):
+    c = 3e8
+    
+    d_m = np.array(distances_km, dtype=float) * 1e3
+    f_hz = np.array(frequencies_mhz, dtype=float) * 1e6
+    
+    print(f"Link Parameters: Pt = {pt_dbm} dBm, Gt = {gt_dbi} dBi, Gr = {gr_dbi} dBi\n")
+    print(f"{'Freq (MHz)':<12} | {'Dist (km)':<10} | {'FSPL (dB)':<12} | {'Pr (dBm)':<12}")
+    print("-" * 55)
+    
+    results = {}
+    
+    for f in f_hz:
+        f_mhz = f / 1e6
+        fspl_db = 20 * np.log10(d_m) + 20 * np.log10(f) + 20 * np.log10(4 * np.pi / c)
+        pr_dbm = pt_dbm + gt_dbi + gr_dbi - fspl_db
+        
+        results[f_mhz] = (fspl_db, pr_dbm)
+        
+        for d, loss, rx_pwr in zip(distances_km, fspl_db, pr_dbm):
+            print(f"{f_mhz:<12.1f} | {d:<10.2f} | {loss:<12.2f} | {rx_pwr:<12.2f}")
+        print("-" * 55)
+        
+    return results
+
+if __name__ == "__main__":
+    distances = [0.5, 1, 2, 5, 10, 20]
+    frequencies = [900, 2400, 5800]
+    
+    Pt = 30.0
+    Gt = 5.0
+    Gr = 3.0
+    
+    results = calculate_fspl_and_pr(distances, frequencies, Pt, Gt, Gr)
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+    
+    for f_mhz, (fspl_db, pr_dbm) in results.items():
+        ax1.plot(distances, fspl_db, marker='o', label=f"{f_mhz:.0f} MHz")
+        ax2.plot(distances, pr_dbm, marker='s', label=f"{f_mhz:.0f} MHz")
+        
+    ax1.set_title("Free-Space Path Loss vs. Distance")
+    ax1.set_xlabel("Distance (km)")
+    ax1.set_ylabel("FSPL (dB)")
+    ax1.grid(True, linestyle='--', alpha=0.7)
+    ax1.legend()
+    
+    ax2.set_title("Received Power vs. Distance")
+    ax2.set_xlabel("Distance (km)")
+    ax2.set_ylabel("Received Power (dBm)")
+    ax2.grid(True, linestyle='--', alpha=0.7)
+    ax2.legend()
+    
+    plt.tight_layout()
+    plt.show()
+
+
+
